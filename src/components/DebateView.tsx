@@ -6,8 +6,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Field } from "@/components/FieldSelector";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
-import { generateDebateWithGemini, generateMockDebate, DebateRound as DebateRoundType } from "@/services/geminiApi";
+import { ArrowLeft, RefreshCw } from "lucide-react";
+import { generateDebateRound, generateMockDebateRound, DebateRound as DebateRoundType } from "@/services/geminiApi";
 
 interface DebateViewProps {
   topic: string;
@@ -17,8 +17,9 @@ interface DebateViewProps {
 
 interface DebateData {
   rounds: DebateRoundType[];
-  loading: boolean;
-  error: string | null;
+  loading: boolean[];
+  error: (string | null)[];
+  completed: boolean;
 }
 
 export const DebateView = ({ topic, fields, onBack }: DebateViewProps) => {
@@ -26,132 +27,213 @@ export const DebateView = ({ topic, fields, onBack }: DebateViewProps) => {
   const [debates, setDebates] = useState<Record<string, DebateData>>({});
   const [activeTab, setActiveTab] = useState<string>(activeFields[0]?.id || "");
   const { toast } = useToast();
-
+  
   // Initialize debate data structure
   useEffect(() => {
     const initialDebates: Record<string, DebateData> = {};
     activeFields.forEach(field => {
       initialDebates[field.id] = {
         rounds: Array(5).fill({ forArgument: "", againstArgument: "" }),
-        loading: true,
-        error: null
+        loading: Array(5).fill(false),
+        error: Array(5).fill(null),
+        completed: false
       };
     });
     setDebates(initialDebates);
   }, [activeFields]);
 
-  // Generate debate for each field
+  // Start generating first round for each field
   useEffect(() => {
-    const generateDebate = async (field: Field, index: number) => {
-      if (!field.active) return;
-      
-      try {
-        // Add a delay for API rate limiting, staggered by field index
-        if (index > 0) {
-          // Show toast notification about delay
-          toast({
-            title: `Generating ${field.name} debate...`,
-            description: "There will be a short delay due to API rate limiting (about 10 seconds per field).",
-            duration: 5000,
-          });
-          
-          await new Promise(resolve => setTimeout(resolve, index * 10000)); // 10 second delay per field
-        }
-        
-        // Call the Gemini API to generate the debate
-        console.log(`Generating debate for ${field.name} on topic: ${topic}`);
-        const response = await generateDebateWithGemini(topic, field.name);
-        
-        setDebates(prev => ({
-          ...prev,
-          [field.id]: {
-            ...response,
-            loading: false,
-            error: null
-          }
-        }));
-      } catch (error) {
-        console.error(`Error generating debate for ${field.name}:`, error);
-        
-        // Fallback to mock data if API fails
-        const mockData = generateMockDebate(topic, field.name);
-        
-        setDebates(prev => ({
-          ...prev,
-          [field.id]: {
-            ...mockData,
-            loading: false,
-            error: `Failed to generate debate using AI. Showing placeholder content.`
-          }
-        }));
-        
-        toast({
-          title: "API Error",
-          description: `Could not generate debate for ${field.name}. Showing placeholder content instead.`,
-          variant: "destructive",
-          duration: 5000,
-        });
-      }
-    };
-
-    // Start generating debates for each field
     activeFields.forEach((field, index) => {
-      generateDebate(field, index);
+      // Add a delay for API rate limiting, staggered by field index
+      setTimeout(() => {
+        generateRound(field.id, 0);
+      }, index * 10000); // 10 second delay per field
     });
-  }, [activeFields, topic, toast]);
+  }, [activeFields]);
 
-  const handleRetry = async (fieldId: string) => {
+  // Function to generate a specific round for a specific field
+  const generateRound = async (fieldId: string, roundIndex: number) => {
     const field = activeFields.find(f => f.id === fieldId);
     if (!field) return;
     
-    // Set loading state
-    setDebates(prev => ({
-      ...prev,
-      [fieldId]: {
-        ...prev[fieldId],
-        loading: true,
-        error: null
-      }
-    }));
+    // Set loading state for this specific round
+    setDebates(prev => {
+      const updatedLoading = [...prev[fieldId].loading];
+      updatedLoading[roundIndex] = true;
+      
+      return {
+        ...prev,
+        [fieldId]: {
+          ...prev[fieldId],
+          loading: updatedLoading,
+          error: [...prev[fieldId].error]
+        }
+      };
+    });
     
-    // Retry the API call
     try {
-      const response = await generateDebateWithGemini(topic, field.name);
+      // Show toast for the first round of each field
+      if (roundIndex === 0) {
+        toast({
+          title: `Generating ${field.name} debate...`,
+          description: "Starting to generate debates with sequential rounds.",
+          duration: 3000,
+        });
+      }
       
-      setDebates(prev => ({
-        ...prev,
-        [fieldId]: {
-          ...response,
-          loading: false,
-          error: null
+      // Get previous rounds for context (except for first round)
+      const previousRounds = roundIndex > 0 
+        ? debates[fieldId].rounds.slice(0, roundIndex)
+        : [];
+      
+      // Generate the current round
+      const roundResult = await generateDebateRound(
+        topic, 
+        field.name, 
+        roundIndex + 1, // Round number (1-indexed)
+        previousRounds
+      );
+      
+      // Update the debate state with the new round data
+      setDebates(prev => {
+        const updatedRounds = [...prev[fieldId].rounds];
+        updatedRounds[roundIndex] = roundResult;
+        
+        const updatedLoading = [...prev[fieldId].loading];
+        updatedLoading[roundIndex] = false;
+        
+        // Check if this was the last round
+        const isCompleted = roundIndex === 4;
+        
+        // If this wasn't the last round, start generating the next round
+        if (!isCompleted) {
+          setTimeout(() => {
+            generateRound(fieldId, roundIndex + 1);
+          }, 2000); // Small delay between rounds
         }
-      }));
-      
-      toast({
-        title: "Success",
-        description: `Regenerated debate for ${field.name}.`,
+        
+        return {
+          ...prev,
+          [fieldId]: {
+            ...prev[fieldId],
+            rounds: updatedRounds,
+            loading: updatedLoading,
+            completed: isCompleted
+          }
+        };
       });
+      
+      // Show toast when the entire debate is completed
+      if (roundIndex === 4) {
+        toast({
+          title: "Debate completed",
+          description: `All rounds for ${field.name} debate have been generated.`,
+          duration: 3000,
+        });
+      }
+      
     } catch (error) {
-      console.error(`Error retrying debate for ${field.name}:`, error);
+      console.error(`Error generating round ${roundIndex + 1} for ${field.name}:`, error);
       
-      // Fallback to mock data
-      const mockData = generateMockDebate(topic, field.name);
-      
-      setDebates(prev => ({
-        ...prev,
-        [fieldId]: {
-          ...mockData,
-          loading: false,
-          error: `Failed to generate debate. Showing placeholder content.`
-        }
-      }));
+      // Update error state for this specific round
+      setDebates(prev => {
+        const updatedError = [...prev[fieldId].error];
+        updatedError[roundIndex] = `Failed to generate round ${roundIndex + 1}`;
+        
+        const updatedLoading = [...prev[fieldId].loading];
+        updatedLoading[roundIndex] = false;
+        
+        // Use mock data for this round
+        const updatedRounds = [...prev[fieldId].rounds];
+        updatedRounds[roundIndex] = generateMockDebateRound(topic, field.name, roundIndex + 1);
+        
+        return {
+          ...prev,
+          [fieldId]: {
+            ...prev[fieldId],
+            rounds: updatedRounds,
+            loading: updatedLoading,
+            error: updatedError
+          }
+        };
+      });
       
       toast({
         title: "Error",
-        description: `Failed to regenerate debate for ${field.name}.`,
+        description: `Failed to generate round ${roundIndex + 1} for ${field.name}.`,
         variant: "destructive",
+        duration: 5000,
       });
     }
+  };
+
+  const handleRetryRound = (fieldId: string, roundIndex: number) => {
+    generateRound(fieldId, roundIndex);
+  };
+
+  const renderDebateRound = (fieldId: string, roundIndex: number) => {
+    const debate = debates[fieldId];
+    if (!debate) return null;
+    
+    const round = debate.rounds[roundIndex];
+    const isLoading = debate.loading[roundIndex];
+    const error = debate.error[roundIndex];
+    
+    if (isLoading) {
+      return (
+        <div className="mb-8">
+          <h3 className="text-xl font-semibold mb-4 border-b border-white/20 pb-2">
+            Round {roundIndex + 1}: {roundIndex === 0 ? "Opening Arguments" : "Rebuttals"}
+          </h3>
+          <div className="space-y-6">
+            <Skeleton className="h-40 w-full" />
+            <Skeleton className="h-40 w-full" />
+          </div>
+        </div>
+      );
+    }
+    
+    if (error) {
+      return (
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xl font-semibold border-b border-white/20 pb-2">
+              Round {roundIndex + 1}: {roundIndex === 0 ? "Opening Arguments" : "Rebuttals"}
+            </h3>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => handleRetryRound(fieldId, roundIndex)}
+              className="ml-4"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Retry Round
+            </Button>
+          </div>
+          <div className="text-destructive mb-4">{error}</div>
+          <DebateRound
+            roundNumber={roundIndex + 1}
+            forArgument={round.forArgument}
+            againstArgument={round.againstArgument}
+          />
+        </div>
+      );
+    }
+    
+    // Don't render empty rounds (not yet generated)
+    if (!round.forArgument && !round.againstArgument) {
+      return null;
+    }
+    
+    return (
+      <DebateRound
+        key={roundIndex}
+        roundNumber={roundIndex + 1}
+        forArgument={round.forArgument}
+        againstArgument={round.againstArgument}
+      />
+    );
   };
 
   const renderDebateContent = (fieldId: string) => {
@@ -159,53 +241,9 @@ export const DebateView = ({ topic, fields, onBack }: DebateViewProps) => {
     
     if (!debate) return null;
     
-    if (debate.error) {
-      return (
-        <div className="text-center py-10">
-          <p className="text-destructive mb-2">{debate.error}</p>
-          <Button variant="outline" className="mt-4" onClick={() => handleRetry(fieldId)}>Retry</Button>
-          <div className="mt-6 border-t border-white/10 pt-6">
-            {debate.rounds.map((round, index) => (
-              <DebateRound
-                key={index}
-                roundNumber={index + 1}
-                forArgument={round.forArgument}
-                againstArgument={round.againstArgument}
-              />
-            ))}
-          </div>
-        </div>
-      );
-    }
-    
-    if (debate.loading) {
-      return (
-        <div className="space-y-8">
-          {[1, 2, 3, 4, 5].map(round => (
-            <div key={round} className="mb-8">
-              <h3 className="text-xl font-semibold mb-4 border-b border-white/20 pb-2">
-                Round {round}: {round === 1 ? "Opening Arguments" : "Rebuttals"}
-              </h3>
-              <div className="space-y-6">
-                <Skeleton className="h-40 w-full" />
-                <Skeleton className="h-40 w-full" />
-              </div>
-            </div>
-          ))}
-        </div>
-      );
-    }
-    
     return (
       <div className="space-y-4">
-        {debate.rounds.map((round, index) => (
-          <DebateRound
-            key={index}
-            roundNumber={index + 1}
-            forArgument={round.forArgument}
-            againstArgument={round.againstArgument}
-          />
-        ))}
+        {debate.rounds.map((_, index) => renderDebateRound(fieldId, index))}
       </div>
     );
   };
@@ -234,7 +272,7 @@ export const DebateView = ({ topic, fields, onBack }: DebateViewProps) => {
               className="flex-shrink-0"
             >
               {field.name}
-              {debates[field.id]?.loading && (
+              {debates[field.id]?.loading.some(loading => loading) && (
                 <span className="ml-2 inline-block h-2 w-2 animate-pulse rounded-full bg-primary"></span>
               )}
             </TabsTrigger>
