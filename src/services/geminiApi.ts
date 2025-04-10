@@ -21,6 +21,7 @@ export const generateDebateRound = async (
 ): Promise<DebateRound> => {
   try {
     console.log(`Generating round ${roundNumber} for topic: ${topic} in field: ${fieldName}`);
+    console.log(`Previous rounds count: ${previousRounds.length}`);
     
     // Construct prompt based on round number and previous rounds
     let prompt = "";
@@ -155,3 +156,4 @@ export const generateMockDebate = (topic: string, fieldName: string): { rounds: 
     ]
   };
 };
+

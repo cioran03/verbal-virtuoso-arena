@@ -36,7 +36,7 @@ export const DebateView = ({ topic, fields, onBack }: DebateViewProps) => {
     const initialDebates: Record<string, DebateData> = {};
     activeFields.forEach(field => {
       initialDebates[field.id] = {
-        rounds: Array(5).fill({ forArgument: "", againstArgument: "" }),
+        rounds: Array(5).fill(null).map(() => ({ forArgument: "", againstArgument: "" })),
         loading: Array(5).fill(false),
         error: Array(5).fill(null),
         completed: false
@@ -158,6 +158,9 @@ export const DebateView = ({ topic, fields, onBack }: DebateViewProps) => {
       const previousRounds = roundIndex > 0 
         ? debates[fieldId].rounds.slice(0, roundIndex)
         : [];
+      
+      // Log to debug
+      console.log(`Before API call for round ${roundIndex + 1}, previous rounds:`, previousRounds);
       
       // Generate the current round
       const roundResult = await generateDebateRound(
@@ -369,3 +372,4 @@ export const DebateView = ({ topic, fields, onBack }: DebateViewProps) => {
     </div>
   );
 };
+
