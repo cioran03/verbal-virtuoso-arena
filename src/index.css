@@ -36,6 +36,11 @@
     --ring: 212.7 26.8% 83.9%;
     
     --radius: 0.5rem;
+    
+    /* Debate colors */
+    --for: 195 83% 58%;
+    --against: 0 72% 58%;
+    --gold: 45 80% 60%;
   }
 }
 
@@ -71,5 +76,21 @@
   
   .gold-accent {
     @apply text-gold;
+  }
+  
+  .text-for {
+    @apply text-[hsl(var(--for))];
+  }
+  
+  .text-against {
+    @apply text-[hsl(var(--against))];
+  }
+  
+  .text-gold {
+    @apply text-[hsl(var(--gold))];
+  }
+  
+  .bg-gradient-bg {
+    background: linear-gradient(135deg, hsl(240, 50%, 15%) 0%, hsl(220, 40%, 20%) 100%);
   }
 }

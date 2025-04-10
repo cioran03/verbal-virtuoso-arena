@@ -36,9 +36,11 @@ export const DebateRound = ({
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.2, duration: 0.4 }}
         >
-          <Card className={cn("for-argument")}>
+          <Card className={cn("for-argument hover:shadow-[0_0_15px_rgba(0,255,255,0.3)] transition-all duration-300")}>
             <h4 className="text-for font-semibold mb-2">For:</h4>
-            <div className="text-foreground">{forArgument}</div>
+            <div className="text-foreground whitespace-pre-line">
+              {forArgument}
+            </div>
           </Card>
         </motion.div>
         
@@ -47,9 +49,11 @@ export const DebateRound = ({
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.4, duration: 0.4 }}
         >
-          <Card className={cn("against-argument")}>
+          <Card className={cn("against-argument hover:shadow-[0_0_15px_rgba(255,0,0,0.3)] transition-all duration-300")}>
             <h4 className="text-against font-semibold mb-2">Against:</h4>
-            <div className="text-foreground">{againstArgument}</div>
+            <div className="text-foreground whitespace-pre-line">
+              {againstArgument}
+            </div>
           </Card>
         </motion.div>
       </div>
