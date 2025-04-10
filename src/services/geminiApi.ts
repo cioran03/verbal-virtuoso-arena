@@ -1,3 +1,4 @@
+
 import { toast } from "@/components/ui/use-toast";
 
 export interface Argument {
@@ -33,6 +34,8 @@ export const generateDebateRound = async (
       Make both arguments substantive, persuasive, and include concrete examples or evidence.
       Keep each argument concise but substantial (about 2-3 paragraphs).
       
+      Use **asterisks** around words or phrases that you want to emphasize.
+      
       Format your response with clearly labeled sections for the FOR argument and AGAINST argument.`;
     } else {
       // Subsequent rounds: build on previous arguments
@@ -51,6 +54,8 @@ export const generateDebateRound = async (
       
       Make both arguments substantive, persuasive, and include concrete examples or evidence.
       Keep each argument concise but substantial (about 2-3 paragraphs).
+      
+      Use **asterisks** around words or phrases that you want to emphasize.
       
       Format your response with clearly labeled sections for the FOR argument and AGAINST argument.`;
     }
@@ -91,8 +96,12 @@ export const generateDebateRound = async (
     const forMatch = generatedText.match(/FOR:?([\s\S]*?)(?=AGAINST:|$)/i);
     const againstMatch = generatedText.match(/AGAINST:?([\s\S]*?)(?=FOR:|$)/i);
     
-    const forArgument = forMatch?.[1]?.trim() || `Could not parse FOR argument for round ${roundNumber}`;
-    const againstArgument = againstMatch?.[1]?.trim() || `Could not parse AGAINST argument for round ${roundNumber}`;
+    let forArgument = forMatch?.[1]?.trim() || `Could not parse FOR argument for round ${roundNumber}`;
+    let againstArgument = againstMatch?.[1]?.trim() || `Could not parse AGAINST argument for round ${roundNumber}`;
+    
+    // Format text with asterisks to be bold and italic
+    forArgument = formatEmphasis(forArgument);
+    againstArgument = formatEmphasis(againstArgument);
     
     return { forArgument, againstArgument };
     
@@ -100,6 +109,11 @@ export const generateDebateRound = async (
     console.error(`Error generating round ${roundNumber}:`, error);
     throw error;
   }
+};
+
+// Helper function to format text with asterisks as bold and italic
+const formatEmphasis = (text: string): string => {
+  return text.replace(/\*\*(.*?)\*\*/g, '<strong><em>$1</em></strong>');
 };
 
 // Function to generate a mock debate round (for fallback)

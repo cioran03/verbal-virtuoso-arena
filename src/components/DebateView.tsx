@@ -26,6 +26,9 @@ export const DebateView = ({ topic, fields, onBack }: DebateViewProps) => {
   const [activeFields] = useState(fields.filter(field => field.active));
   const [debates, setDebates] = useState<Record<string, DebateData>>({});
   const [activeTab, setActiveTab] = useState<string>(activeFields[0]?.id || "");
+  const [currentFieldIndex, setCurrentFieldIndex] = useState<number>(0);
+  const [currentRound, setCurrentRound] = useState<number>(0);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const { toast } = useToast();
   
   // Initialize debate data structure
@@ -40,17 +43,86 @@ export const DebateView = ({ topic, fields, onBack }: DebateViewProps) => {
       };
     });
     setDebates(initialDebates);
+    
+    // Start the first field's debate generation
+    if (activeFields.length > 0) {
+      startDebateGeneration();
+    }
   }, [activeFields]);
 
-  // Start generating first round for each field
-  useEffect(() => {
-    activeFields.forEach((field, index) => {
-      // Add a delay for API rate limiting, staggered by field index
-      setTimeout(() => {
-        generateRound(field.id, 0);
-      }, index * 10000); // 10 second delay per field
-    });
-  }, [activeFields]);
+  // Main function to manage the sequential generation of fields and rounds
+  const startDebateGeneration = async () => {
+    if (currentFieldIndex >= activeFields.length) {
+      return; // All fields processed
+    }
+    
+    const currentField = activeFields[currentFieldIndex];
+    
+    // Start generating rounds for the current field
+    try {
+      setIsProcessing(true);
+      
+      // Generate all rounds for the current field
+      for (let round = 0; round < 5; round++) {
+        setCurrentRound(round);
+        await generateRound(currentField.id, round);
+        
+        // Small delay between rounds to prevent rate limiting issues
+        if (round < 4) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+      
+      // Mark this field as completed
+      setDebates(prev => ({
+        ...prev,
+        [currentField.id]: {
+          ...prev[currentField.id],
+          completed: true
+        }
+      }));
+      
+      // Move to the next field after a 90-second delay (1.5 minutes)
+      toast({
+        title: `${currentField.name} debate completed`,
+        description: `Waiting 90 seconds before starting the next field due to API rate limiting...`,
+        duration: 5000,
+      });
+      
+      await new Promise(resolve => setTimeout(resolve, 90000)); // 90 seconds delay
+      
+      // Proceed to the next field
+      setCurrentFieldIndex(prev => prev + 1);
+      setCurrentRound(0);
+      
+      // If there are more fields, continue the process
+      if (currentFieldIndex + 1 < activeFields.length) {
+        const nextField = activeFields[currentFieldIndex + 1];
+        toast({
+          title: `Starting ${nextField.name} debate`,
+          description: "Generating arguments for the next field...",
+          duration: 3000,
+        });
+        startDebateGeneration();
+      } else {
+        toast({
+          title: "All debates completed",
+          description: "All fields have been processed.",
+          duration: 5000,
+        });
+      }
+    } catch (error) {
+      console.error(`Error in debate generation process:`, error);
+      toast({
+        title: "Error",
+        description: `Failed to complete the debate generation process: ${error}`,
+        variant: "destructive",
+        duration: 5000,
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   // Function to generate a specific round for a specific field
   const generateRound = async (fieldId: string, roundIndex: number) => {
@@ -103,35 +175,15 @@ export const DebateView = ({ topic, fields, onBack }: DebateViewProps) => {
         const updatedLoading = [...prev[fieldId].loading];
         updatedLoading[roundIndex] = false;
         
-        // Check if this was the last round
-        const isCompleted = roundIndex === 4;
-        
-        // If this wasn't the last round, start generating the next round
-        if (!isCompleted) {
-          setTimeout(() => {
-            generateRound(fieldId, roundIndex + 1);
-          }, 2000); // Small delay between rounds
-        }
-        
         return {
           ...prev,
           [fieldId]: {
             ...prev[fieldId],
             rounds: updatedRounds,
-            loading: updatedLoading,
-            completed: isCompleted
+            loading: updatedLoading
           }
         };
       });
-      
-      // Show toast when the entire debate is completed
-      if (roundIndex === 4) {
-        toast({
-          title: "Debate completed",
-          description: `All rounds for ${field.name} debate have been generated.`,
-          duration: 3000,
-        });
-      }
       
     } catch (error) {
       console.error(`Error generating round ${roundIndex + 1} for ${field.name}:`, error);
@@ -182,7 +234,7 @@ export const DebateView = ({ topic, fields, onBack }: DebateViewProps) => {
     
     if (isLoading) {
       return (
-        <div className="mb-8">
+        <div className="mb-8" key={`${fieldId}-round-${roundIndex}`}>
           <h3 className="text-xl font-semibold mb-4 border-b border-white/20 pb-2">
             Round {roundIndex + 1}: {roundIndex === 0 ? "Opening Arguments" : "Rebuttals"}
           </h3>
@@ -196,7 +248,7 @@ export const DebateView = ({ topic, fields, onBack }: DebateViewProps) => {
     
     if (error) {
       return (
-        <div className="mb-8">
+        <div className="mb-8" key={`${fieldId}-round-${roundIndex}`}>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-xl font-semibold border-b border-white/20 pb-2">
               Round {roundIndex + 1}: {roundIndex === 0 ? "Opening Arguments" : "Rebuttals"}
@@ -228,7 +280,7 @@ export const DebateView = ({ topic, fields, onBack }: DebateViewProps) => {
     
     return (
       <DebateRound
-        key={roundIndex}
+        key={`${fieldId}-round-${roundIndex}`}
         roundNumber={roundIndex + 1}
         forArgument={round.forArgument}
         againstArgument={round.againstArgument}
@@ -248,6 +300,16 @@ export const DebateView = ({ topic, fields, onBack }: DebateViewProps) => {
     );
   };
 
+  // Generate progress status text
+  const getProgressStatus = () => {
+    if (currentFieldIndex >= activeFields.length) {
+      return "All debates completed";
+    }
+    
+    const currentField = activeFields[currentFieldIndex];
+    return `Generating ${currentField.name} debate - Round ${currentRound + 1}/5`;
+  };
+
   return (
     <div className="container max-w-5xl mx-auto py-8">
       <div className="flex items-center gap-4 mb-8">
@@ -258,6 +320,18 @@ export const DebateView = ({ topic, fields, onBack }: DebateViewProps) => {
           Debate: <span className="text-gold">{topic}</span>
         </h1>
       </div>
+      
+      {isProcessing && (
+        <div className="bg-muted/30 p-4 rounded-lg mb-6">
+          <p className="text-sm flex items-center gap-2">
+            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-primary"></span>
+            {getProgressStatus()}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Processing fields sequentially to avoid API rate limits. Please be patient.
+          </p>
+        </div>
+      )}
       
       <Tabs 
         defaultValue={activeTab} 
